@@ -1,15 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using Serilog;
 
 namespace DockerSmtpTest
 {
@@ -22,25 +17,35 @@ namespace DockerSmtpTest
 
         public IConfiguration Configuration { get; }
 
-        // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
         }
 
-        // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env)
+        public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory,
+            IApplicationLifetime appLifetime)
         {
             if(env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
             }
-            else
+
+            var logDir = Configuration.GetValue<string>("logDirectory");
+            if(!string.IsNullOrWhiteSpace(logDir))
             {
-                app.UseHsts();
+                var config = new LoggerConfiguration()
+                    .Enrich.FromLogContext()
+                    .Filter.ByIncludingOnly((e) =>
+                    {
+                        return e.Level >= Serilog.Events.LogEventLevel.Error;
+                    })
+                    .WriteTo.RollingFile(string.Concat(logDir, "/{Date}.txt"));
+
+                var serilog = config.CreateLogger();
+                loggerFactory.AddSerilog(serilog);
+                appLifetime.ApplicationStopped.Register(Log.CloseAndFlush);
             }
 
-            app.UseHttpsRedirection();
             app.UseMvc();
         }
     }
